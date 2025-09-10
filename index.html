@@ -310,6 +310,8 @@ function redraw(){
   }
   ctx.fillStyle = "#4fd18a";
   ctx.fillRect(env.gx*TILE_SIZE, env.gy*TILE_SIZE, TILE_SIZE-1, TILE_SIZE-1);
+  ctx.fillStyle = "#4f90d1";
+  ctx.fillRect(spawn[0]*TILE_SIZE+8, spawn[1]*TILE_SIZE+8, TILE_SIZE-16, TILE_SIZE-16);
   ctx.fillStyle = "#7fb0ff";
   ctx.fillRect(env.ax*TILE_SIZE+4, env.ay*TILE_SIZE+4, TILE_SIZE-8, TILE_SIZE-8);
   ctx.setTransform(1,0,0,1,0,0);
@@ -332,6 +334,7 @@ function redraw(){
 }
 redraw();
 
+let dragSpawn=false, dragGoal=false;
 cv.addEventListener('mousedown', e=>{
   if(e.button===1){
     panStart={x:e.clientX,y:e.clientY,ox:view.x,oy:view.y};
@@ -339,8 +342,10 @@ cv.addEventListener('mousedown', e=>{
     return;
   }
   if(e.button!==0) return;
-  drawing=true;
   const t=mouseToTile(e);
+  if(t.x===spawn[0] && t.y===spawn[1]){ dragSpawn=true; return; }
+  if(t.x===goal[0] && t.y===goal[1]){ dragGoal=true; return; }
+  drawing=true;
   startX=t.x; startY=t.y;
   paint(e);
 });
@@ -348,6 +353,19 @@ cv.addEventListener('mousemove', e=>{
   if(panStart){
     view.x = panStart.ox + (e.clientX-panStart.x);
     view.y = panStart.oy + (e.clientY-panStart.y);
+    redraw();
+    return;
+  }
+  const t=mouseToTile(e);
+  if(dragSpawn){
+    spawn=[t.x,t.y];
+    env.ax=t.x; env.ay=t.y;
+    redraw();
+    return;
+  }
+  if(dragGoal){
+    goal=[t.x,t.y];
+    env.gx=t.x; env.gy=t.y;
     redraw();
     return;
   }
@@ -361,6 +379,7 @@ window.addEventListener('mouseup', e=>{
     drawShape(startX,startY,t.x,t.y);
   }
   drawing=false;
+  dragSpawn=false; dragGoal=false;
 });
 
 cv.addEventListener('contextmenu', e=>{
