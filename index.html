@@ -131,6 +131,50 @@ const agentSelect= document.getElementById('agentSelect');
 const env = new Env(GRID_W, GRID_H);
 env.reset([1,1],[GRID_W-2,GRID_H-2]);
 
+// drawing state & history
+let tool='brush';
+let drawing=false;
+let undoStack=[], redoStack=[];
+
+function setTile(x,y,val){
+  if(x<0||y<0||x>=GRID_W||y>=GRID_H) return;
+  const old=env.grid[y][x];
+  if(old===val) return;
+  env.grid[y][x]=val;
+  undoStack.push({x,y,old,val});
+  redoStack.length=0;
+}
+
+function floodFill(x,y,target,repl){
+  if(target===repl) return;
+  const stack=[[x,y]]; const seen=new Set();
+  while(stack.length){
+    const [cx,cy]=stack.pop();
+    const key=cx+','+cy;
+    if(seen.has(key)) continue;
+    seen.add(key);
+    if(cx<0||cy<0||cx>=GRID_W||cy>=GRID_H) continue;
+    if(env.grid[cy][cx]!==target) continue;
+    setTile(cx,cy,repl);
+    stack.push([cx+1,cy],[cx-1,cy],[cx,cy+1],[cx,cy-1]);
+  }
+}
+
+function undo(){
+  const op=undoStack.pop();
+  if(!op) return;
+  env.grid[op.y][op.x]=op.old;
+  redoStack.push(op);
+  redraw();
+}
+function redo(){
+  const op=redoStack.pop();
+  if(!op) return;
+  env.grid[op.y][op.x]=op.val;
+  undoStack.push(op);
+  redraw();
+}
+
 function redraw(){
   const W=GRID_W*TILE_SIZE, H=GRID_H*TILE_SIZE;
   cv.width=W; cv.height=H;
@@ -151,8 +195,7 @@ function redraw(){
 }
 redraw();
 
-let drawing=false;
-cv.addEventListener('mousedown', e=>{ drawing=true; paint(e); });
+cv.addEventListener('mousedown', e=>{ if(e.button!==0) return; drawing=true; paint(e); });
 cv.addEventListener('mousemove', e=>{ if(drawing) paint(e); });
 window.addEventListener('mouseup', ()=> drawing=false);
 
@@ -161,9 +204,44 @@ function paint(e){
   const x=Math.floor((e.clientX-rect.left)/TILE_SIZE);
   const y=Math.floor((e.clientY-rect.top)/TILE_SIZE);
   if(x<0||y<0||x>=GRID_W||y>=GRID_H) return;
-  env.grid[y][x] = parseInt(tileSelect.value,10);
+  if(tool==='pipette'){
+    tileSelect.value = String(env.grid[y][x]);
+    tool='brush';
+    return;
+  }
+  const val = (tool==='eraser') ? TILE.EMPTY : parseInt(tileSelect.value,10);
+  if(tool==='fill'){
+    floodFill(x,y, env.grid[y][x], val);
+  } else {
+    setTile(x,y,val);
+  }
   redraw();
 }
+
+document.addEventListener('keydown', e=>{
+  if(e.target.tagName==='INPUT' || e.target.tagName==='SELECT') return;
+  if(e.ctrlKey){
+    const k=e.key.toLowerCase();
+    if(k==='z'){ e.preventDefault(); undo(); }
+    else if(k==='y'){ e.preventDefault(); redo(); }
+    else if(k==='s'){ e.preventDefault(); saveBtn.onclick(); }
+    else if(k==='l'){ e.preventDefault(); loadBtn.onclick(); }
+    return;
+  }
+  switch(e.key){
+    case '1': case '2': case '3': case '4': case '5':
+      tileSelect.value=String(parseInt(e.key)-1); break;
+    case 'b': case 'B': tool='brush'; break;
+    case 'e': case 'E': tool='eraser'; break;
+    case 'f': case 'F': tool='fill'; break;
+    case 'i': case 'I': tool='pipette'; break;
+    case ' ': e.preventDefault(); playBtn.onclick(); break;
+    case 'n': case 'N': stepBtn.onclick(); break;
+    case 'r': case 'R': resetBtn.onclick(); break;
+    case 's': case 'S': saveBtn.onclick(); break;
+    case 'l': case 'L': loadBtn.onclick(); break;
+  }
+});
 
 /* ===================== Inline Web Worker ===================== */
 const workerCode = `
