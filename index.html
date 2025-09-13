@@ -4,17 +4,21 @@
   <meta charset="utf-8">
   <title>PetriForge — one file</title>
   <meta name="viewport" content="width=device-width,initial-scale=1">
-  <style>
-    :root{--bg:#0f0f13;--fg:#e6e6ee;--muted:#9aa;--panel:#16161d;--line:#2a2a33}
-    html,body{height:100%} body{margin:0;background:var(--bg);color:var(--fg);font-family:system-ui,Segoe UI,Roboto}
-    header{padding:10px;border-bottom:1px solid var(--line);background:var(--panel);display:flex;gap:8px;align-items:center;position:sticky;top:0;z-index:5}
-    button,select{background:#1a1a22;color:var(--fg);border:1px solid #2b2b36;border-radius:10px;padding:6px 10px}
-    button:hover{filter:brightness(1.08)} .pill{padding:3px 8px;border:1px solid #2b2b36;border-radius:999px;font-size:12px;opacity:.85}
-    #wrap{display:flex;flex-direction:column;height:100vh} #stage{flex:1;min-height:0;display:flex;align-items:center;justify-content:center}
-    #hud{padding:8px 12px;border-top:1px solid var(--line);background:var(--panel);display:flex;gap:16px;align-items:center}
-    canvas{image-rendering: pixelated; border:1px solid #222; background:#15151b}
-    .spacer{flex:1} a{color:#7fb0ff;text-decoration:none}
-  </style>
+    <style>
+      :root{--bg:#0f0f13;--fg:#e6e6ee;--muted:#9aa;--panel:#16161d;--line:#2a2a33}
+      html,body{height:100%} body{margin:0;background:var(--bg);color:var(--fg);font-family:system-ui,Segoe UI,Roboto}
+      header{padding:10px;border-bottom:1px solid var(--line);background:var(--panel);display:flex;gap:8px;align-items:center;position:sticky;top:0;z-index:5}
+      button,select{background:#1a1a22;color:var(--fg);border:1px solid #2b2b36;border-radius:10px;padding:6px 10px}
+      button:hover{filter:brightness(1.08)} .pill{padding:3px 8px;border:1px solid #2b2b36;border-radius:999px;font-size:12px;opacity:.85}
+      #wrap{display:flex;flex-direction:column;height:100vh} #stage{flex:1;min-height:0;display:flex;align-items:center;justify-content:center;position:relative;overflow:hidden}
+      #hud{padding:8px 12px;border-top:1px solid var(--line);background:var(--panel);display:flex;gap:16px;align-items:center}
+      canvas{image-rendering: pixelated; border:1px solid #222; background:#15151b}
+      #mini{position:absolute;right:8px;bottom:8px;border:1px solid var(--line);background:#000}
+      #ctxmenu{position:absolute;display:none;background:#1a1a22;border:1px solid #444;border-radius:4px;padding:4px;z-index:20}
+      #ctxmenu div{padding:4px 8px;cursor:pointer}
+      #ctxmenu div:hover{background:#333}
+      .spacer{flex:1} a{color:#7fb0ff;text-decoration:none}
+    </style>
 </head>
 <body>
 <div id="wrap">
@@ -24,26 +28,48 @@
     <button id="reset">♻️ Reset</button>
     <span class="pill" id="status">idle</span>
     <div class="spacer"></div>
-    <label>Tile:
-      <select id="tileSelect">
-        <option value="0">EMPTY</option>
-        <option value="1">WALL</option>
-        <option value="2">GOAL</option>
-        <option value="3">HAZARD</option>
-        <option value="4">REWARD</option>
-      </select>
-    </label>
-    <button id="save">💾 Save</button>
-    <button id="load">📂 Load</button>
-    <label>Agent:
-      <select id="agentSelect">
-        <option value="random">Random</option>
+      <label>Tile:
+        <select id="tileSelect">
+          <option value="0">EMPTY</option>
+          <option value="1">WALL</option>
+          <option value="2">GOAL</option>
+          <option value="3">HAZARD</option>
+          <option value="4">REWARD</option>
+        </select>
+      </label>
+      <label>Tool:
+        <select id="toolSelect">
+          <option value="brush">Brush</option>
+          <option value="rect">Rectangle</option>
+          <option value="line">Line</option>
+          <option value="fill">Fill</option>
+          <option value="pipette">Pipette</option>
+          <option value="eraser">Eraser</option>
+        </select>
+      </label>
+      <label>Zoom:
+        <select id="zoomSel">
+          <option value="0.25">25%</option>
+          <option value="0.5">50%</option>
+          <option value="1" selected>100%</option>
+          <option value="2">200%</option>
+        </select>
+      </label>
+      <button id="save">💾 Save</button>
+      <button id="load">📂 Load</button>
+      <label>Agent:
+        <select id="agentSelect">
+          <option value="random">Random</option>
         <option value="qlearning">Q-Learning</option>
       </select>
     </label>
   </header>
 
-  <div id="stage"><canvas id="cv" width="720" height="480"></canvas></div>
+    <div id="stage">
+      <canvas id="cv" width="720" height="480"></canvas>
+      <canvas id="mini" width="150" height="100"></canvas>
+      <div id="ctxmenu"></div>
+    </div>
 
   <div id="hud">
     <div>Steps: <span id="steps">0</span></div>
@@ -126,44 +152,297 @@ const resetBtn= document.getElementById('reset');
 const saveBtn = document.getElementById('save');
 const loadBtn = document.getElementById('load');
 const tileSelect = document.getElementById('tileSelect');
+const toolSelect = document.getElementById('toolSelect');
+const zoomSel = document.getElementById('zoomSel');
 const agentSelect= document.getElementById('agentSelect');
+const mini = document.getElementById('mini');
+const mctx = mini.getContext('2d');
+const ctxMenu = document.getElementById('ctxmenu');
 
 const env = new Env(GRID_W, GRID_H);
-env.reset([1,1],[GRID_W-2,GRID_H-2]);
+let spawn=[1,1], goal=[GRID_W-2,GRID_H-2];
+env.reset(spawn,goal);
+
+// drawing state & history
+let tool='brush';
+let drawing=false;
+let startX=0,startY=0;
+let undoStack=[], redoStack=[];
+let view={x:0,y:0,scale:1};
+let panStart=null;
+toolSelect.onchange = ()=>{ tool = toolSelect.value; };
+zoomSel.onchange = ()=>{ view.scale=parseFloat(zoomSel.value); redraw(); };
+
+function setTile(x,y,val){
+  if(x<0||y<0||x>=GRID_W||y>=GRID_H) return;
+  const old=env.grid[y][x];
+  if(old===val) return;
+  env.grid[y][x]=val;
+  undoStack.push({x,y,old,val});
+  redoStack.length=0;
+}
+
+function floodFill(x,y,target,repl){
+  if(target===repl) return;
+  const stack=[[x,y]]; const seen=new Set();
+  while(stack.length){
+    const [cx,cy]=stack.pop();
+    const key=cx+','+cy;
+    if(seen.has(key)) continue;
+    seen.add(key);
+    if(cx<0||cy<0||cx>=GRID_W||cy>=GRID_H) continue;
+    if(env.grid[cy][cx]!==target) continue;
+    setTile(cx,cy,repl);
+    stack.push([cx+1,cy],[cx-1,cy],[cx,cy+1],[cx,cy-1]);
+  }
+}
+
+function undo(){
+  const op=undoStack.pop();
+  if(!op) return;
+  env.grid[op.y][op.x]=op.old;
+  redoStack.push(op);
+  redraw();
+}
+function redo(){
+  const op=redoStack.pop();
+  if(!op) return;
+  env.grid[op.y][op.x]=op.val;
+  undoStack.push(op);
+  redraw();
+}
+
+function mouseToTile(e){
+  const rect=cv.getBoundingClientRect();
+  const x=((e.clientX-rect.left)-view.x)/(TILE_SIZE*view.scale);
+  const y=((e.clientY-rect.top)-view.y)/(TILE_SIZE*view.scale);
+  return {x:Math.floor(x),y:Math.floor(y)};
+}
+
+function drawShape(x0,y0,x1,y1){
+  const val = (tool==='eraser')?TILE.EMPTY:parseInt(tileSelect.value,10);
+  if(tool==='rect'){
+    const minX=Math.min(x0,x1), maxX=Math.max(x0,x1);
+    const minY=Math.min(y0,y1), maxY=Math.max(y0,y1);
+    for(let y=minY;y<=maxY;y++) for(let x=minX;x<=maxX;x++) setTile(x,y,val);
+  } else if(tool==='line'){
+    let dx=Math.abs(x1-x0), dy=Math.abs(y1-y0), sx=x0<x1?1:-1, sy=y0<y1?1:-1, err=dx-dy;
+    let x=x0,y=y0;
+    while(true){ setTile(x,y,val); if(x===x1 && y===y1) break; const e2=2*err; if(e2>-dy){err-=dy;x+=sx;} if(e2<dx){err+=dx;y+=sy;} }
+  }
+  redraw();
+}
+
+function generateNoise(){
+  for(let y=0;y<GRID_H;y++) for(let x=0;x<GRID_W;x++)
+    setTile(x,y, Math.random()<0.2 ? TILE.WALL : TILE.EMPTY);
+  redraw();
+}
+
+function generateMaze(){
+  for(let y=0;y<GRID_H;y++) for(let x=0;x<GRID_W;x++) setTile(x,y,TILE.WALL);
+  function carve(x,y){
+    const dirs=[[1,0],[-1,0],[0,1],[0,-1]].sort(()=>Math.random()-0.5);
+    for(const [dx,dy] of dirs){
+      const nx=x+dx*2, ny=y+dy*2;
+      if(nx>0&&ny>0&&nx<GRID_W-1&&ny<GRID_H-1&&env.grid[ny][nx]===TILE.WALL){
+        setTile(x+dx,y+dy,TILE.EMPTY);
+        setTile(nx,ny,TILE.EMPTY);
+        carve(nx,ny);
+      }
+    }
+  }
+  setTile(1,1,TILE.EMPTY); carve(1,1); redraw();
+}
+
+function generateRooms(){
+  for(let y=0;y<GRID_H;y++) for(let x=0;x<GRID_W;x++) setTile(x,y,TILE.WALL);
+  const rooms=[];
+  for(let i=0;i<5;i++){
+    const w=3+Math.floor(Math.random()*6), h=3+Math.floor(Math.random()*6);
+    const x=1+Math.floor(Math.random()*(GRID_W-w-1));
+    const y=1+Math.floor(Math.random()*(GRID_H-h-1));
+    rooms.push({x,y,w,h});
+    for(let yy=y;yy<y+h;yy++) for(let xx=x;xx<x+w;xx++) setTile(xx,yy,TILE.EMPTY);
+  }
+  for(let i=1;i<rooms.length;i++){
+    const a=rooms[i-1], b=rooms[i];
+    for(let x=Math.min(a.x+b.w/2,b.x+b.w/2); x<=Math.max(a.x+a.w/2,b.x+b.w/2); x++) setTile(x, Math.floor(a.y+a.h/2), TILE.EMPTY);
+    for(let y=Math.min(a.y+a.h/2,b.y+b.h/2); y<=Math.max(a.y+a.h/2,b.y+b.h/2); y++) setTile(Math.floor(b.x+b.w/2), y, TILE.EMPTY);
+  }
+  redraw();
+}
+
+function generateIsland(){
+  const cx=GRID_W/2, cy=GRID_H/2, maxR=Math.min(cx,cy)-2;
+  for(let y=0;y<GRID_H;y++){
+    for(let x=0;x<GRID_W;x++){
+      const d=Math.hypot(x-cx,y-cy)+Math.random()*2;
+      setTile(x,y, d<maxR ? TILE.EMPTY : TILE.WALL);
+    }
+  }
+  redraw();
+}
+
+let ctxTile={x:0,y:0};
+function handleCtx(i){
+  switch(i){
+    case 0: spawn=[ctxTile.x,ctxTile.y]; env.reset(spawn,goal); break;
+    case 1: goal=[ctxTile.x,ctxTile.y]; env.reset(spawn,goal); break;
+    case 2: setTile(ctxTile.x,ctxTile.y,TILE.EMPTY); break;
+    case 3: generateNoise(); break;
+    case 4: generateMaze(); break;
+    case 5: generateRooms(); break;
+    case 6: generateIsland(); break;
+  }
+  redraw();
+}
 
 function redraw(){
-  const W=GRID_W*TILE_SIZE, H=GRID_H*TILE_SIZE;
-  cv.width=W; cv.height=H;
+  ctx.setTransform(1,0,0,1,0,0);
+  ctx.clearRect(0,0,cv.width,cv.height);
+  ctx.setTransform(view.scale,0,0,view.scale,view.x,view.y);
   for(let y=0;y<GRID_H;y++){
     for(let x=0;x<GRID_W;x++){
       ctx.fillStyle = COLORS[env.grid[y][x]];
       ctx.fillRect(x*TILE_SIZE, y*TILE_SIZE, TILE_SIZE-1, TILE_SIZE-1);
     }
   }
-  // goal
   ctx.fillStyle = "#4fd18a";
   ctx.fillRect(env.gx*TILE_SIZE, env.gy*TILE_SIZE, TILE_SIZE-1, TILE_SIZE-1);
-  // agent
+  ctx.fillStyle = "#4f90d1";
+  ctx.fillRect(spawn[0]*TILE_SIZE+8, spawn[1]*TILE_SIZE+8, TILE_SIZE-16, TILE_SIZE-16);
   ctx.fillStyle = "#7fb0ff";
   ctx.fillRect(env.ax*TILE_SIZE+4, env.ay*TILE_SIZE+4, TILE_SIZE-8, TILE_SIZE-8);
+  ctx.setTransform(1,0,0,1,0,0);
   stepsEl.textContent = String(env.steps);
   trewEl.textContent = env.totalReward.toFixed(2);
+  const ms=mini.width/GRID_W;
+  mctx.clearRect(0,0,mini.width,mini.height);
+  for(let y=0;y<GRID_H;y++){
+    for(let x=0;x<GRID_W;x++){
+      mctx.fillStyle=COLORS[env.grid[y][x]];
+      mctx.fillRect(x*ms,y*ms,ms,ms);
+    }
+  }
+  mctx.strokeStyle='#fff';
+  const vx=-view.x/(TILE_SIZE*view.scale)*ms;
+  const vy=-view.y/(TILE_SIZE*view.scale)*ms;
+  const vw=cv.width/(TILE_SIZE*view.scale)*ms;
+  const vh=cv.height/(TILE_SIZE*view.scale)*ms;
+  mctx.strokeRect(vx,vy,vw,vh);
 }
 redraw();
 
-let drawing=false;
-cv.addEventListener('mousedown', e=>{ drawing=true; paint(e); });
-cv.addEventListener('mousemove', e=>{ if(drawing) paint(e); });
-window.addEventListener('mouseup', ()=> drawing=false);
+let dragSpawn=false, dragGoal=false;
+cv.addEventListener('mousedown', e=>{
+  if(e.button===1){
+    panStart={x:e.clientX,y:e.clientY,ox:view.x,oy:view.y};
+    e.preventDefault();
+    return;
+  }
+  if(e.button!==0) return;
+  const t=mouseToTile(e);
+  if(t.x===spawn[0] && t.y===spawn[1]){ dragSpawn=true; return; }
+  if(t.x===goal[0] && t.y===goal[1]){ dragGoal=true; return; }
+  drawing=true;
+  startX=t.x; startY=t.y;
+  paint(e);
+});
+cv.addEventListener('mousemove', e=>{
+  if(panStart){
+    view.x = panStart.ox + (e.clientX-panStart.x);
+    view.y = panStart.oy + (e.clientY-panStart.y);
+    redraw();
+    return;
+  }
+  const t=mouseToTile(e);
+  if(dragSpawn){
+    spawn=[t.x,t.y];
+    env.ax=t.x; env.ay=t.y;
+    redraw();
+    return;
+  }
+  if(dragGoal){
+    goal=[t.x,t.y];
+    env.gx=t.x; env.gy=t.y;
+    redraw();
+    return;
+  }
+  if(drawing && (tool==='brush'||tool==='eraser')) paint(e);
+});
+window.addEventListener('mouseup', e=>{
+  if(e.button===1){ panStart=null; return; }
+  if(e.button!==0) return;
+  if(tool==='rect'||tool==='line'){
+    const t=mouseToTile(e);
+    drawShape(startX,startY,t.x,t.y);
+  }
+  drawing=false;
+  dragSpawn=false; dragGoal=false;
+});
+
+cv.addEventListener('contextmenu', e=>{
+  e.preventDefault();
+  const t=mouseToTile(e);
+  ctxTile=t;
+  ctxMenu.style.left=e.clientX+'px';
+  ctxMenu.style.top=e.clientY+'px';
+  ctxMenu.innerHTML='';
+  ['Set spawn','Set goal','Clear tile','Gen noise','Gen maze','Gen rooms','Gen island'].forEach((txt,i)=>{
+    const div=document.createElement('div');
+    div.textContent=txt; div.onclick=()=>{handleCtx(i); ctxMenu.style.display='none';};
+    ctxMenu.appendChild(div);
+  });
+  ctxMenu.style.display='block';
+});
+document.addEventListener('click',()=> ctxMenu.style.display='none');
 
 function paint(e){
-  const rect=cv.getBoundingClientRect();
-  const x=Math.floor((e.clientX-rect.left)/TILE_SIZE);
-  const y=Math.floor((e.clientY-rect.top)/TILE_SIZE);
+  const {x,y}=mouseToTile(e);
   if(x<0||y<0||x>=GRID_W||y>=GRID_H) return;
-  env.grid[y][x] = parseInt(tileSelect.value,10);
-  redraw();
+  if(tool==='pipette'){
+    tileSelect.value = String(env.grid[y][x]);
+    tool='brush'; toolSelect.value='brush';
+    return;
+  }
+  const val = (tool==='eraser') ? TILE.EMPTY : parseInt(tileSelect.value,10);
+  if(tool==='fill'){
+    floodFill(x,y, env.grid[y][x], val);
+    redraw();
+    drawing=false;
+  } else if(tool==='brush' || tool==='eraser'){
+    setTile(x,y,val);
+    redraw();
+  }
 }
+
+document.addEventListener('keydown', e=>{
+  if(e.target.tagName==='INPUT' || e.target.tagName==='SELECT') return;
+  if(e.ctrlKey){
+    const k=e.key.toLowerCase();
+    if(k==='z'){ e.preventDefault(); undo(); }
+    else if(k==='y'){ e.preventDefault(); redo(); }
+    else if(k==='s'){ e.preventDefault(); saveBtn.onclick(); }
+    else if(k==='l'){ e.preventDefault(); loadBtn.onclick(); }
+    return;
+  }
+    switch(e.key){
+      case '1': case '2': case '3': case '4': case '5':
+        tileSelect.value=String(parseInt(e.key)-1); break;
+      case 'b': case 'B': tool='brush'; toolSelect.value='brush'; break;
+      case 'e': case 'E': tool='eraser'; toolSelect.value='eraser'; break;
+      case 'f': case 'F': tool='fill'; toolSelect.value='fill'; break;
+      case 'i': case 'I': tool='pipette'; toolSelect.value='pipette'; break;
+      case 'q': case 'Q': tool='rect'; toolSelect.value='rect'; break;
+      case 'w': case 'W': tool='line'; toolSelect.value='line'; break;
+      case ' ': e.preventDefault(); playBtn.onclick(); break;
+      case 'n': case 'N': stepBtn.onclick(); break;
+      case 'r': case 'R': resetBtn.onclick(); break;
+      case 's': case 'S': saveBtn.onclick(); break;
+      case 'l': case 'L': loadBtn.onclick(); break;
+    }
+  });
 
 /* ===================== Inline Web Worker ===================== */
 const workerCode = `
@@ -230,16 +509,23 @@ playBtn.onclick = ()=>{
 };
 stepBtn.onclick = ()=> worker.postMessage({ type:'act', payload:{ obs: env.observe() } });
 resetBtn.onclick = ()=>{
-  env.reset([1,1],[GRID_W-2,GRID_H-2]); redraw();
+  env.reset(spawn,goal); redraw();
   worker.postMessage({ type:'reset', payload:{ obs: env.observe() } });
 };
 saveBtn.onclick = ()=>{
-  localStorage.setItem('pf_scene', JSON.stringify(env.grid));
+  const data={grid:env.grid,spawn,goal};
+  localStorage.setItem('pf_scene', JSON.stringify(data));
 };
 loadBtn.onclick = ()=>{
   const raw = localStorage.getItem('pf_scene');
   if(!raw) return;
-  try{ env.grid = JSON.parse(raw); } catch {}
+  try{
+    const data=JSON.parse(raw);
+    env.grid=data.grid||env.grid;
+    spawn=data.spawn||spawn;
+    goal=data.goal||goal;
+    env.reset(spawn,goal);
+  }catch{}
   redraw();
 };
 
